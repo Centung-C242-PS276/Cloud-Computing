@@ -1,0 +1,28 @@
+python -m venv venv
+.\venv\Scripts\activate
+
+uvicorn app.main:app --reload
+
+export GOOGLE_APPLICATION_CREDENTIALS="path/to/your-service-account-file.json"
+
+http://127.0.0.1:8080 
+
+{
+  "request_uuid": "uuid-unique-request-id",  # UUID tambahan untuk permintaan
+  "input_data": {
+    "umur_bulan": 24,
+    "jenis_kelamin": "Perempuan",
+    "tinggi": 80.0
+  },
+  "response_data": {
+    "prediction_id": "uuid-unique-prediction-id",  # UUID untuk prediksi
+    "hasil_klasifikasi": "Stunting",
+    "berdasarkan": {
+      "jenis_kelamin": "Perempuan",
+      "tinggi_badan": "80.0 cm",
+      "umur": "24 bulan"
+    }
+  },
+  "timestamp": "2024-12-02T12:34:56Z"
+}
+
