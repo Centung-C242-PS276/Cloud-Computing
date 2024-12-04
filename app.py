@@ -1,94 +1,77 @@
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
+from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-import logging
 
-# Create a logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+# Inisialisasi Flask
+app = Flask(__name__)
 
-# Create a file handler and a stream handler
-file_handler = logging.FileHandler("app.log")
-stream_handler = logging.StreamHandler()
-
-# Create a formatter and set it for the handlers
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(formatter)
-stream_handler.setFormatter(formatter)
-
-# Add the handlers to the logger
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
-
-# Initialize FastAPI
-app = FastAPI()
-
-# Load model and preprocessing configuration
+# Load model dan konfigurasi preprocessing
 model = load_model("model_balita.h5")
 
-# Label encoding for gender
+# Label encoding untuk jenis kelamin
 gender_mapping = {"laki-laki": 1, "perempuan": 0}
 label_encoder = LabelEncoder()
 label_encoder.fit(["laki-laki", "perempuan"])
 
-# Standardization (use the same scaler as during training)
+# Standarisasi data (gunakan scaler yang sama seperti saat pelatihan)
 scaler = StandardScaler()
-scaler.fit([[14, 1, 73]])  # Example dummy data for scaler initialization
+scaler.fit([[14, 1, 73]])  # Contoh data dummy untuk inisialisasi scaler
 
-# Class labels for predictions
+# Mapping hasil prediksi
 class_labels = ["Normal", "Severely Stunting", "Stunting", "Tinggi"]
 
-# Input schema
-class PredictionInput(BaseModel):
-    umur_bulan: int
-    jenis_kelamin: str
-    tinggi: float
+@app.route("/", methods=["GET"])
+def home():
+    return "Hello from Flask on Google Cloud Run!"
 
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello from FastAPI on Google Cloud Run!"}
-
-
-@app.post("/predict")
-def predict(data: PredictionInput):
+@app.route("/predict", methods=["POST"])
+def predict():
     try:
-        logger.info("Received request with data: %s", data.dict())
+        # Ambil data dari request
+        data = request.get_json()
 
-        # Validate gender
-        if data.jenis_kelamin not in gender_mapping:
-            logger.error("Jenis kelamin harus 'laki-laki' atau 'perempuan'.")
-            raise HTTPException(status_code=400, detail="Jenis kelamin harus 'laki-laki' atau 'perempuan'.")
+        # Validasi input
+        umur_bulan = data.get("umur_bulan")
+        jenis_kelamin = data.get("jenis_kelamin")
+        tinggi = data.get("tinggi")
 
-        # Convert gender to numeric
-        jenis_kelamin_numeric = gender_mapping[data.jenis_kelamin]
+        if None in [umur_bulan, jenis_kelamin, tinggi]:
+            return jsonify({"error": "Input tidak lengkap. Pastikan umur_bulan, jenis_kelamin, dan tinggi diisi!"}), 400
 
-        # Prepare input data
+        # Konversi jenis kelamin
+        if jenis_kelamin not in gender_mapping:
+            return jsonify({"error": "Jenis kelamin harus 'laki-laki' atau 'perempuan'."}), 400
+        jenis_kelamin_numeric = gender_mapping[jenis_kelamin]
+
+        # Siapkan data input
         input_data = pd.DataFrame([{
-            "umur_bulan": data.umur_bulan,
+            "umur_bulan": umur_bulan,
             "jenis_kelamin": jenis_kelamin_numeric,
-            "tinggi": data.tinggi
+            "tinggi": tinggi
         }])
 
-        # Scale input data
+        # Lakukan scaling
         input_array = scaler.transform(input_data)
 
-        # Predict with the model
+        # Prediksi dengan model
         prediction = model.predict(input_array)
         predicted_class_index = np.argmax(prediction[0])
         predicted_class_label = class_labels[predicted_class_index]
 
-        logger.info("Prediction result: %s", predicted_class_label)
-
-        # Return response
-        return {
-            "prediction_raw": prediction[0].tolist(),
-            "predicted_class": predicted_class_label
-        }
-
+        # Respons prediksi
+        return jsonify({
+            "predicted_class": predicted_class_label,
+            "user_input": {
+                "umur_bulan": umur_bulan,
+                "jenis_kelamin": jenis_kelamin,
+                "tinggi": tinggi
+            },
+            "prediction_raw": prediction[0].tolist()
+        })
     except Exception as e:
-        logger.error("Error occurred: %s", str(e))
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
