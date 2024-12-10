@@ -1,0 +1,19 @@
+auth-centung ->centung123
+
+mysql -h 34.101.148.55 -u auth-centung -p
+
+mysql -u auth-centung -p -h 34.101.148.55 -P 3306 auth_db
+
+docker build -t my-auth-api .
+docker run -p 8080:8080 my-auth-api
+docker tag my-auth-api gcr.io/capstone-project-centung/my-auth-api
+docker push gcr.io/capstone-project-centung/my-auth-api
+
+gcloud run deploy my-auth-api \
+  --image gcr.io/capstone-project-centung/my-auth-api \
+  --platform managed \
+  --region asia-southeast2 \
+  --allow-unauthenticated
+
+
+
