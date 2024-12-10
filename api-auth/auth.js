@@ -8,7 +8,7 @@ const jwt = require("jsonwebtoken");
 const cors = require('cors');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 8080; // Menggunakan PORT yang diberikan oleh Cloud Run
 
 // Middleware
 app.use(bodyParser.json());
@@ -50,8 +50,10 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-
-
+// Rute utama (root)
+app.get("/", (req, res) => {
+  res.send("API authentication centung is running...");
+});
 
 // Endpoint: Register
 app.post("/register", async (req, res) => {
@@ -79,10 +81,10 @@ app.post("/register", async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Simpan data ke database
+    // Simpan data ke database, termasuk JWT token
     db.query(
-      "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
-      [username, email, hashedPassword],
+      "INSERT INTO users (username, email, password, jwt_token) VALUES (?, ?, ?, ?)",
+      [username, email, hashedPassword, ''],
       (err, result) => {
         if (err) {
           if (err.code === "ER_DUP_ENTRY") {
@@ -126,14 +128,24 @@ app.post("/login", (req, res) => {
       // Generate JWT Token
       const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
-      res.status(200).json({
-        message: "Login berhasil",
-        token,
-        user: {
-          username: user.username,
-          email: user.email,
-        },
-      });
+      // Simpan JWT token ke dalam database
+      db.query(
+        "UPDATE users SET jwt_token = ? WHERE id = ?",
+        [token, user.id],
+        (err, result) => {
+          if (err) {
+            return res.status(500).json({ error: "Gagal menyimpan JWT token" });
+          }
+          res.status(200).json({
+            message: "Login berhasil",
+            token,
+            user: {
+              username: user.username,
+              email: user.email,
+            },
+          });
+        }
+      );
     }
   );
 });
@@ -148,5 +160,5 @@ app.get("/profile", authenticateToken, (req, res) => {
 
 // Jalankan server
 app.listen(PORT, () => {
-  console.log(`Server berjalan di http://localhost:${PORT}`);
+  console.log(`Server berjalan di 0.0.0.0:${PORT}`);
 });
