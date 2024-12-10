@@ -5,10 +5,10 @@ const bodyParser = require("body-parser");
 const validator = require("validator");
 const dotenv = require("dotenv").config();
 const jwt = require("jsonwebtoken");
-const cors = require('cors');
+const cors = require("cors");
 
 const app = express();
-const PORT = process.env.PORT || 8080; // Menggunakan PORT yang diberikan oleh Cloud Run
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(bodyParser.json());
@@ -37,14 +37,14 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: "Token diperlukan" });
   }
 
-  const tokenWithoutBearer = token.startsWith('Bearer ') ? token.slice(7) : token;
-  console.log("Token diterima:", tokenWithoutBearer); // Tambahkan log ini
+  const tokenWithoutBearer = token.startsWith("Bearer ")
+    ? token.slice(7)
+    : token;
 
   jwt.verify(tokenWithoutBearer, process.env.JWT_SECRET, (err, user) => {
     if (err) {
       return res.status(403).json({ error: "Token tidak valid" });
     }
-    console.log("User dari token:", user); // Tambahkan log ini
     req.user = user;
     next();
   });
@@ -78,13 +78,11 @@ app.post("/register", async (req, res) => {
   }
 
   try {
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Simpan data ke database, termasuk JWT token
     db.query(
       "INSERT INTO users (username, email, password, jwt_token) VALUES (?, ?, ?, ?)",
-      [username, email, hashedPassword, ''],
+      [username, email, hashedPassword, ""],
       (err, result) => {
         if (err) {
           if (err.code === "ER_DUP_ENTRY") {
@@ -108,7 +106,6 @@ app.post("/login", (req, res) => {
     return res.status(400).json({ error: "Email/Username dan password diperlukan" });
   }
 
-  // Cek apakah identifier adalah email atau username
   db.query(
     "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(username) = ?",
     [identifier.toLowerCase(), identifier.toLowerCase()],
@@ -118,21 +115,21 @@ app.post("/login", (req, res) => {
       }
 
       const user = results[0];
-
-      // Periksa password
       const match = await bcrypt.compare(password, user.password);
       if (!match) {
         return res.status(401).json({ error: "Password salah" });
       }
 
-      // Generate JWT Token
-      const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, process.env.JWT_SECRET, { expiresIn: "1h" });
+      const token = jwt.sign(
+        { id: user.id, username: user.username, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: "1h" }
+      );
 
-      // Simpan JWT token ke dalam database
       db.query(
         "UPDATE users SET jwt_token = ? WHERE id = ?",
         [token, user.id],
-        (err, result) => {
+        (err) => {
           if (err) {
             return res.status(500).json({ error: "Gagal menyimpan JWT token" });
           }
@@ -154,8 +151,65 @@ app.post("/login", (req, res) => {
 app.get("/profile", authenticateToken, (req, res) => {
   res.status(200).json({
     message: "Ini adalah halaman profile",
-    user: req.user, // Menampilkan user info yang ada pada token
+    user: req.user,
   });
+});
+
+// Endpoint: Edit Profile
+app.put("/profile", authenticateToken, async (req, res) => {
+  const { username, email, password } = req.body;
+
+  if (username && !validator.isLength(username, { min: 3, max: 20 })) {
+    return res.status(400).json({ error: "Username harus memiliki 3-20 karakter" });
+  }
+
+  if (email && !validator.isEmail(email)) {
+    return res.status(400).json({ error: "Email tidak valid" });
+  }
+
+  if (password && !validator.isStrongPassword(password, { minLength: 8, minSymbols: 0 })) {
+    return res.status(400).json({
+      error: "Password harus minimal 8 karakter dan mengandung huruf besar, kecil, dan angka",
+    });
+  }
+
+  try {
+    const updates = {};
+    if (username) updates.username = username;
+    if (email) updates.email = email;
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      updates.password = hashedPassword;
+    }
+
+    const updateKeys = Object.keys(updates);
+    if (updateKeys.length === 0) {
+      return res.status(400).json({ error: "Tidak ada data yang diperbarui" });
+    }
+
+    const updateFields = updateKeys.map((key) => `${key} = ?`).join(", ");
+    const updateValues = updateKeys.map((key) => updates[key]);
+    updateValues.push(req.user.id);
+
+    db.query(
+      `UPDATE users SET ${updateFields} WHERE id = ?`,
+      updateValues,
+      (err, result) => {
+        if (err) {
+          console.error("Error updating profile:", err.message);
+          return res.status(500).json({ error: "Gagal memperbarui profil" });
+        }
+
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ error: "Pengguna tidak ditemukan" });
+        }
+
+        res.status(200).json({ message: "Profil berhasil diperbarui" });
+      }
+    );
+  } catch (error) {
+    res.status(500).json({ error: "Terjadi kesalahan pada server" });
+  }
 });
 
 // Jalankan server
