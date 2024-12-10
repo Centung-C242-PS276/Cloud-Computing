@@ -6,6 +6,9 @@ const validator = require("validator");
 const dotenv = require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
+const multer = require("multer");
+const { Storage } = require("@google-cloud/storage");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -29,6 +32,27 @@ db.getConnection((err) => {
     console.log("Connected to the MySQL database.");
   }
 });
+
+// Konfigurasi Google Cloud Storage
+const storage = new Storage();
+const bucketName = process.env.GCS_BUCKET_NAME;
+
+// Konfigurasi multer untuk mengunggah file
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // Maksimal ukuran file 5MB
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error("File harus berupa gambar (jpeg, jpg, png)"));
+  },
+});
+
+
 
 // Middleware untuk validasi token JWT
 const authenticateToken = (req, res, next) => {
@@ -153,6 +177,104 @@ app.get("/profile", authenticateToken, (req, res) => {
     message: "Ini adalah halaman profile",
     user: req.user,
   });
+});
+
+// Endpoint: Unggah Foto Profil
+app.post("/profile/upload-photo", authenticateToken, upload.single("photo"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "File foto diperlukan" });
+  }
+
+  try {
+    const fileName = `profile_photos/${req.user.id}_${Date.now()}_${req.file.originalname}`;
+    const blob = storage.bucket(bucketName).file(fileName);
+    const blobStream = blob.createWriteStream({
+      resumable: false,
+      contentType: req.file.mimetype,
+    });
+
+    blobStream.on("error", (err) => {
+      console.error("Error uploading to GCS:", err.message);
+      res.status(500).json({ error: "Gagal mengunggah foto ke server" });
+    });
+
+    blobStream.on("finish", () => {
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
+
+      // Simpan URL foto profil ke database
+      db.query(
+        "UPDATE users SET profile_photo = ? WHERE id = ?",
+        [publicUrl, req.user.id],
+        (err) => {
+          if (err) {
+            return res.status(500).json({ error: "Gagal menyimpan URL foto ke database" });
+          }
+          res.status(200).json({ message: "Foto profil berhasil diunggah", photoUrl: publicUrl });
+        }
+      );
+    });
+
+    blobStream.end(req.file.buffer);
+  } catch (error) {
+    res.status(500).json({ error: "Terjadi kesalahan pada server" });
+  }
+});
+
+// Endpoint: Edit Foto Profil
+app.post("/profile/photo", authenticateToken, upload.single("photo"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Foto profil diperlukan" });
+  }
+
+  const fileExtension = path.extname(req.file.originalname).toLowerCase();
+  const allowedExtensions = [".jpg", ".jpeg", ".png"];
+  if (!allowedExtensions.includes(fileExtension)) {
+    return res.status(400).json({ error: "Format file tidak valid. Hanya JPG atau PNG yang diperbolehkan" });
+  }
+
+  try {
+    // Nama file unik untuk penyimpanan di Cloud Storage
+    const fileName = `profile-photos/${req.user.id}-${Date.now()}${fileExtension}`;
+    const blob = bucket.file(fileName);
+
+    const blobStream = blob.createWriteStream({
+      resumable: false,
+      metadata: {
+        contentType: req.file.mimetype,
+      },
+    });
+
+    blobStream.on("error", (err) => {
+      console.error("Upload error:", err);
+      res.status(500).json({ error: "Gagal mengunggah foto profil" });
+    });
+
+    blobStream.on("finish", async () => {
+      // URL publik untuk foto profil
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
+
+      // Perbarui URL foto profil di database
+      db.query(
+        "UPDATE users SET profile_photo = ? WHERE id = ?",
+        [publicUrl, req.user.id],
+        (err, result) => {
+          if (err) {
+            console.error("Database update error:", err);
+            return res.status(500).json({ error: "Gagal memperbarui foto profil" });
+          }
+          res.status(200).json({
+            message: "Foto profil berhasil diperbarui",
+            profilePhoto: publicUrl,
+          });
+        }
+      );
+    });
+
+    blobStream.end(req.file.buffer);
+  } catch (error) {
+    console.error("Error during upload:", error);
+    res.status(500).json({ error: "Terjadi kesalahan pada server" });
+  }
 });
 
 // Endpoint: Edit Profile
