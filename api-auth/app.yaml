@@ -1,0 +1,19 @@
+runtime: nodejs18 
+
+instance_class: F2 
+
+env_variables:
+  NODE_ENV: "production"  # Menandakan aplikasi berjalan di lingkungan produksi
+  DB_HOST : "34.101.148.55"  
+  DB_USER: "auth-centung"  
+  DB_PASSWORD: "centung123"  
+  DB_NAME: "auth_db"  
+  JWT_SECRET: "supersecretkey12345"  
+
+handlers:
+  - url: /favicon.ico
+    static_files: favicon.ico
+    upload: favicon.ico
+
+  - url: /.*  
+    script: auto
