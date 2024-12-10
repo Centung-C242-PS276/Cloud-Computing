@@ -1,4 +1,4 @@
-#Create API-MODEL_ML to Centung Apps
+
 
 import numpy as np
 import pandas as pd
@@ -64,13 +64,8 @@ def predict():
 
         # Respons prediksi
         return jsonify({
-            "predicted_class": predicted_class_label,
-            "user_input": {
-                "umur_bulan": umur_bulan,
-                "jenis_kelamin": jenis_kelamin,
-                "tinggi": tinggi
-            },
-            "prediction_raw": prediction[0].tolist()
+            "prediction_raw": prediction[0].tolist(),
+            "predicted_class": predicted_class_label
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
