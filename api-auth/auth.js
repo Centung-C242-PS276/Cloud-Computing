@@ -82,10 +82,10 @@ app.get("/", (req, res) => {
 
 // Endpoint: Register
 app.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+  const { name, email, password } = req.body;
 
   // Validasi input
-  if (!username || !email || !password) {
+  if (!name || !email || !password) {
     return res.status(400).json({ error: true, message: "All fields are required" });
   }
 
@@ -100,21 +100,21 @@ app.post("/register", async (req, res) => {
   }
 
   // Validasi format username (hanya alphanumeric, dengan beberapa karakter khusus)
-  if (!validator.isAlphanumeric(username, 'en-US', { ignore: '._-' })) {
-    return res.status(400).json({ error: true, message: "Invalid username format" });
-  }
+  // if (!validator.isAlphanumeric(username, 'en-US', { ignore: '._-' })) {
+  //   return res.status(400).json({ error: true, message: "Invalid username format" });
+  // }
 
-  console.log("Request received:", { username, email });
+  console.log("Request received:", { name, email });
 
   try {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
     console.log("Password hashed successfully");
 
-    // Cek apakah username atau email sudah ada di database
+    // Cek apakah email sudah ada di database
     db.query(
-      "SELECT * FROM users WHERE email = ? OR username = ?",
-      [email, username],
+      "SELECT * FROM users WHERE email = ?",
+      email,
       (err, results) => {
         if (err) {
           console.error("Database query error:", err);
@@ -122,18 +122,18 @@ app.post("/register", async (req, res) => {
         }
 
         if (results.length > 0) {
-          return res.status(400).json({ error: "Email or username already exists" });
+          return res.status(400).json({ error: "Email already exists" });
         }
 
         // Jika tidak ada duplikasi, insert data ke database
         db.query(
-          "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
-          [username, email, hashedPassword],
+          "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
+          [name, email, hashedPassword],
           (err, result) => {
             if (err) {
               console.error("Database insert error:", err);
               if (err.code === "ER_DUP_ENTRY") {
-                return res.status(400).json({ error: "Email or username already exists" });
+                return res.status(400).json({ error: "Email already exists" });
               }
               return res.status(500).json({ error: "Server error during insert", details: err });
             }
@@ -176,7 +176,7 @@ app.post("/login", (req, res) => {
       }
 
       const token = jwt.sign(
-        { userId: user.id, username: user.username },
+        { userId: user.id, name: user.name },
         process.env.JWT_SECRET,
         { expiresIn: "1h" }
       );
@@ -186,7 +186,7 @@ app.post("/login", (req, res) => {
         message: "success",
         loginResult: {
           userId: user.id,
-          name: user.username, // Menggunakan username sebagai name
+          name: user.name, // Menggunakan username sebagai name
           token,
         },
       });
